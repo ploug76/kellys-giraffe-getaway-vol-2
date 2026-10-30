@@ -512,7 +512,7 @@ function drawTiles(){const Wd=WORLDS[LEVELS[G.li].w],T=G.L.T,x0=Math.max(0,Math.
    c.fillStyle='rgba(230,250,255,.8)';for(let i=0;i<4;i++){const wx=X+i*10+Math.sin(G.t*3+tx+i)*2;c.fillRect(wx,Y+3+Math.sin(G.t*4+i+tx)*2,6,2)}}}}}
 function drawEnt(e){const fl=e.face>0;if(e.dead&&!e.dying)return;c.save();if(e.dying){c.translate(e.x,e.y-e.h/2);c.rotate(e.rot||0);c.translate(-e.x,-(e.y-e.h/2));c.globalAlpha=clamp(e.dying,0,1)}
  if(e.k==='food'){const n=e.f==='mango'?'mango':'leaves';spr(n,e.x,e.y+18+Math.sin(e.t*2)*3,1);if(G.p.mode==='ride'&&Math.hypot(e.x-G.p.x,e.y-G.p.y)<200){c.globalAlpha=0.5+0.5*Math.sin(G.t*6);c.strokeStyle='#fff6a0';c.lineWidth=2;c.beginPath();c.arc(e.x,e.y,24,0,TAU);c.stroke()}}
- else if(e.k==='hyena'){spr(e.dying||e.stun>0?'hy_dizzy':(Math.floor(e.t*6)%2?'hy_walk1':'hy_walk2'),e.x,e.y+3,0.98,fl)}
+ else if(e.k==='hyena'){if(e.dying||e.stun>0||!drawHyenaRig(e,e.x,e.y+3,0.98,fl))spr(e.dying||e.stun>0?'hy_dizzy':'hy_walk1',e.x,e.y+3,0.98,fl)}
  else if(e.k==='porc')spr('porc',e.x,e.y+2,1,fl,1,Math.sin(e.t*8)*0.03);
  else if(e.k==='vult')spr(e.st==='dive'||Math.floor(e.t*5)%2?'vult2':'vult1',e.x,e.y+10,1,fl);
  else if(e.k==='monkey')spr('monkey',e.x,e.y+2,1,fl,1,e.thr>0?-0.15*(fl?-1:1):0);
@@ -645,6 +645,24 @@ function drawRideRig(p,x,y,sc,flip,amp){const im=IMG.ride_body;if(!im)return fal
  girLeg(HX+4,HY,t,amp,false,true);girLeg(FX+4,FY,t+Math.PI*0.9,amp,true,true);
  c.drawImage(im,-96,-192);
  girLeg(HX,HY+2,t+Math.PI*0.2,amp,false,false);girLeg(FX,FY+2,t+Math.PI*1.1,amp,true,false);
+ c.restore();return true}
+/* Hyena: 4-leg walk (lateral sequence) under the legless body art; sprite faces left natively. Render-only. */
+function hyLeg(hx,hy,t,amp,front,back){const s=Math.sin(t),cs=Math.cos(t),lift=Math.pow(Math.max(0,cs),1.4);
+ const T=back?'#8f7148':'#c29d68',L=back?'#24180c':'#3b2a1c';
+ const up=(front?0.04:-0.06)+amp*0.42*s,u=front?up:up+0.32,lo=front?up-0.05-amp*1.15*lift:up-0.3-amp*0.95*lift;
+ const k=rigLimb(hx,hy,-u,front?19:18,front?(back?10:12):(back?12:14.5),T,L);
+ const a=rigLimb(k[0],k[1],-lo,front?17:18,back?8:9.5,T,L);
+ c.fillStyle=T;c.beginPath();c.arc(k[0],k[1],back?4.8:5.6,0,TAU);c.fill();
+ if(!back){c.fillStyle='rgba(60,40,24,.75)';c.beginPath();c.ellipse((hx+k[0])/2,(hy+k[1])/2,2.6,3.4,0,0,TAU);c.fill()}
+ c.fillStyle=back?'#3a2a1a':'#5a4430';c.beginPath();c.ellipse(a[0]-3,a[1]+1.5,6.5,3.6,0,0,TAU);c.fill()}
+function drawHyenaRig(e,x,y,sc,flip){const im=IMG.hy_body;if(!im)return false;
+ const rdt=clamp(e.t-(e._lt===undefined?e.t:e._lt),0,0.1);e._lt=e.t;if(e._rph===undefined){e._rph=(e.x*0.013)%1;e._ramt=1}
+ const v=Math.abs(e.vx||0),mv=v>5;e._ramt+=((mv?1:0)-e._ramt)*Math.min(1,rdt*10);if(mv)e._rph=(e._rph+v*rdt/62)%1;
+ const amp=e._ramt*clamp(v/75,0.5,1.2),t=e._rph*TAU,bob=amp*1.6*Math.cos(2*t),f=0.5*sc;
+ c.save();c.translate(x,y);c.scale(flip?-f:f,f);c.translate(-im.width/2,-im.height);
+ hyLeg(106,66+bob,t+Math.PI,amp,false,true);hyLeg(48,66+bob,t+Math.PI*1.5,amp,true,true);
+ c.drawImage(im,0,bob);
+ hyLeg(118,68+bob,t,amp,false,false);hyLeg(60,68+bob,t+Math.PI*0.5,amp,true,false);
  c.restore();return true}
 
 /* ===== menus (DOM) ===== */

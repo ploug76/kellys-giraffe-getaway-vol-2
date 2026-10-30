@@ -605,13 +605,43 @@ function render(){c.setTransform(DPR,0,0,DPR,0,0);c.clearRect(0,0,W,H);if(!G){c.
  const vg=c.createRadialGradient(W/2,gameH/2,Math.min(W,gameH)*0.45,W/2,gameH/2,Math.max(W,gameH)*0.75);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.35)');c.fillStyle=vg;c.fillRect(0,0,W,gameH);
  c.restore();drawPadBG();if(state==='play'||state==='pause')drawHUD()}
 
+/* ArmRig (arm check, Oct 30 2026; arm-only cut of King Juju's KneeRig): painted single-pose arms re-posed as upper arm + forearm.
+   Pieces are cut from the art as capsules (image px); the hole left behind is back-filled with a darkened copy so nothing shows through.
+   Each arm swings about the shoulder opposite its leg on the stride phase, the elbow bends more on the forward swing; amp 0 = art pose.
+   spec: {arms:[{s:[x,y] shoulder,e:[x,y] elbow,w:[x,y] wrist/fist end,ru,rf radii,o phase offset (0..1),A shoulder swing rad,E elbow bend rad,far}]} */
+const ArmRig=(()=>{const C=new WeakMap(),PI=Math.PI,TAU=PI*2;
+ function cap(x,a,b,r){const g=Math.atan2(b[1]-a[1],b[0]-a[0]);x.moveTo(a[0]+Math.sin(g)*r,a[1]-Math.cos(g)*r);x.arc(b[0],b[1],r,g-PI/2,g+PI/2);x.arc(a[0],a[1],r,g+PI/2,g+PI*1.5);x.closePath()}
+ function cv(W,H){const o=document.createElement('canvas');o.width=W;o.height=H;return o}
+ function piece(im,fn){const o=cv(im.width,im.height),x=o.getContext('2d');x.beginPath();fn(x);x.clip();x.drawImage(im,0,0);return o}
+ function dark(src,W,H,al){const u=cv(W,H),x=u.getContext('2d');x.drawImage(src,0,0);x.globalCompositeOperation='source-atop';x.fillStyle='rgba(40,20,20,'+al+')';x.fillRect(0,0,W,H);return u}
+ function prep(im,R){let P=C.get(R);if(P&&P.im===im)return P;const W=im.width,H=im.height,body=cv(W,H),bx=body.getContext('2d');bx.drawImage(im,0,0);bx.globalCompositeOperation='destination-out';const U=[],ep=R.ep||0.8;
+  const arms=R.arms.map(m=>{const up=piece(im,x=>cap(x,m.s,m.e,m.ru+ep)),fo=piece(im,x=>cap(x,m.e,m.w,m.rf+ep));
+   if(!m.keep){bx.beginPath();cap(bx,m.s,m.e,m.ru+ep);bx.fill();bx.beginPath();cap(bx,m.e,m.w,m.rf+ep);bx.fill()}
+   return{m,up,fo}});
+  /* back-fill each hole that sat over the body by smearing the neighbouring body pixels into it (fu/ff flags per piece), so no ghost arm shows */
+  const snap=cv(W,H);snap.getContext('2d').drawImage(body,0,0);const FC={};
+  /* fill canvas sampling first from direction fd (radians, image space; undefined = all around) */
+  const fill=fd=>{const key=fd===undefined?'all':fd.toFixed(2);if(FC[key])return FC[key];const F=cv(W,H),fx=F.getContext('2d');fx.globalCompositeOperation='destination-over';
+   for(let r=1;r<=(R.fr||22);r+=1.5){if(fd===undefined){for(let k=0;k<16;k++){const t=k/16*TAU;fx.drawImage(snap,-Math.cos(t)*r,-Math.sin(t)*r)}}
+    else for(const dk of [0,-.4,.4,-.8,.8]){const t=fd+dk;fx.drawImage(snap,-Math.cos(t)*r,-Math.sin(t)*r)}}return FC[key]=F};
+  bx.globalCompositeOperation='destination-over';for(const g of arms){const m=g.m;for(const [on,a0,b0,rr,fd] of [[m.fu!==0,m.s,m.e,m.ru,m.fdu],[!!m.ff,m.e,m.w,m.rf,m.fdf]]){if(!on)continue;bx.save();bx.beginPath();cap(bx,a0,b0,rr+ep+0.5);bx.clip();bx.drawImage(fill(fd),0,0);bx.restore()}}
+  bx.globalCompositeOperation='source-over';P={im,body,arms};C.set(R,P);return P}
+ function blit(x,img,p0,px,py,r){x.save();x.translate(px,py);if(r)x.rotate(r);x.translate(-p0[0],-p0[1]);x.drawImage(img,0,0);x.restore()}
+ /* u = stride phase in cycles (0..1, front leg forward at u=.25), amp 0..1; dir: +1 = art faces +x */
+ function draw(x,im,R,u,amp){if(!im||!(im.width||im.naturalWidth))return;const a=Math.max(0,Math.min(1,amp||0));if(a<0.01){x.drawImage(im,0,0);return}
+  const A=a*a*(3-2*a),P=prep(im,R),fs=[],ns=[];for(const g of P.arms){const m=g.m,f=-Math.sin(TAU*(u+(m.o||0))),sa=-(m.A||0.3)*f*A,ea=-(m.E||0.3)*Math.max(0,f)*A+(m.Eb||0.1)*Math.max(0,-f)*A,
+   ex=m.s[0]+(m.e[0]-m.s[0])*Math.cos(sa)-(m.e[1]-m.s[1])*Math.sin(sa),ey=m.s[1]+(m.e[0]-m.s[0])*Math.sin(sa)+(m.e[1]-m.s[1])*Math.cos(sa);(m.far?fs:ns).push([g,ex,ey,sa,sa+ea])}
+  const dr=([g,ex,ey,sa,fa])=>{blit(x,g.fo,g.m.e,ex,ey,fa);blit(x,g.up,g.m.s,g.m.s[0],g.m.s[1],sa)};fs.forEach(dr);x.drawImage(P.body,0,0);ns.forEach(dr)}
+ return{draw,prep}})();
+/* Kelly's painted running arms (kelly_torso art px): front = raised fist, back = fist at the hip */
+const KELLY_ARMS={arms:[{s:[84,60],e:[89,74],w:[104,57],ru:5,rf:4.5,o:0,A:.28,E:.3,fu:1,ff:0,fdu:3.14},{s:[44,61],e:[37,71],w:[51,83],ru:5.5,rf:5,o:.5,A:.25,E:.3,fu:1,ff:1,fdu:3.4,fdf:0}]};
 /* ===== run-cycle rig: real alternating strides (body art + animated legs) ===== */
 function rigLimb(x,y,a,len,w,fill,line){const ex=x+Math.sin(a)*len,ey=y+Math.cos(a)*len;c.lineCap='round';
  c.strokeStyle=line;c.lineWidth=w+3.2;c.beginPath();c.moveTo(x,y);c.lineTo(ex,ey);c.stroke();
  c.strokeStyle=fill;c.lineWidth=w;c.beginPath();c.moveTo(x,y);c.lineTo(ex,ey);c.stroke();return[ex,ey]}
 function rigStep(p,dt,running,spd){if(p._rph===undefined){p._rph=0;p._ramt=0}
  p._ramt+=((running?1:0)-p._ramt)*Math.min(1,dt*14);
- const v=Math.abs(p.vx);if(running)p._rph=(p._rph+v*dt/(p.mode==='ride'?118:78))%1;
+ const v=Math.abs(p.vx);if(running)p._rph=(p._rph+Math.min(1.375,v/(p.mode==='ride'?118:78))*dt)%1;/* cadence (arm check, Oct 30 2026): capped at ~2.75 steps/s (Kelly was ~6, Jinxy ~5) */
  else if(p._ramt>0.02){/* settle the nearer leg pair toward a neutral passing pose */const t=p._rph%0.5;p._rph+=(t<0.25?-t:0.5-t)*Math.min(1,dt*10)}
  return p._ramt*clamp(v/spd,0.55,1)+0.0}
 /* Kelly on foot. ix/iy in sprite pixels; bottom-centre of the sprite = ground */
@@ -628,7 +658,7 @@ function drawKellyRig(p,x,y,sc,flip,amp){const im=IMG.kelly_torso;if(!im)return 
  bob=amp*5*Math.cos(2*t),lean=amp*0.035*Math.sin(2*t);
  c.save();c.translate(x,y);c.scale(flip?-f:f,f);const hx=3,hy=-66+bob;
  kellyLeg(hx-3,hy,t+Math.PI,amp,true);
- c.save();c.translate(hx,hy);c.rotate(lean);c.translate(-hx,-hy);c.drawImage(im,-59,-161+bob);c.restore();
+ c.save();c.translate(hx,hy);c.rotate(lean);c.translate(-hx,-hy);c.translate(-59,-161+bob);ArmRig.draw(c,im,KELLY_ARMS,p._rph,amp);c.restore();
  kellyLeg(hx+2,hy,t,amp,false);c.restore();return true}
 /* Jinxy (ride mode): four-legged gallop under the body art */
 function girLeg(hx,hy,t,amp,front,back){const cs=Math.cos(t),s=Math.sin(t),up=front?0.12+amp*0.7*s:-0.08+amp*0.64*s,
